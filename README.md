@@ -11,6 +11,7 @@ It assumes sqlite3-dev has been installed.
 2. The key feature here is use of sqlite for storing connection related info (not all info but some) - not in memory structures.
 3. Lots and lots needs to be done. All comments, criticism, improvements etc welcome
 4. Right now it serves a json file of countries from the country table for all requests. Doesn't parse the request URL etc.
+5. I have not figured out stuff like keeping directory structure clean, so modify Makefile before you compile.
 
 
 
