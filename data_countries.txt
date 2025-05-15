@@ -1,0 +1,8 @@
+IN,India,India,INR
+MY,Malaysia,Malaysia,MYR
+SG,Singapore,Singapore,SGD
+TH,Thailand,Thailand,THB
+US,USA,United States,USD
+HK,Hongkong,Hongkong,HKD
+UK,United Kingdom,UK,GBP
+JP,Japan,Japan,JPY
