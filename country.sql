@@ -1,10 +1,3 @@
-CREATE TABLE connections (
-    cnfd INTEGER,
-    cncrdt INTEGER,
-    cnupdt INTEGER,
-    cnon INTEGER
-);
-
 CREATE TABLE countries (			
 			
 cocou   TEXT PRIMARY KEY,

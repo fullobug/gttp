@@ -32,10 +32,12 @@ int epfd;
 
 sqlite3 *db;
 sqlite3_stmt *updcn;
+sqlite3_stmt *updbr;
 sqlite3_stmt *selcn;
 sqlite3_stmt *delcn;
 sqlite3_stmt *inscn;
 sqlite3_stmt *selcou;
+sqlite3_stmt *selfd;
 
 const char status_200[] = "HTTP/1.1 200 OK\r\n";
 const char status_500[] = "HTTP/1.1 500 Internal Server Error\r\n";
@@ -47,73 +49,8 @@ int main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
 
-  // Open Sqlite connection
-
-  //   int rc = sqlite3_open_v2("cn.db", &db, SQLITE_OPEN_CREATE |
-  //   SQLITE_OPEN_READWRITE | SQLITE_OPEN_MEMORY );
-  //   need to consider the program execution directory!
-  int sc = sqlite3_open_v2("db/gttp.db", &db,
-                           SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, NULL);
-  if (sc == SQLITE_OK) {
-    // printf("Opened SQlite DB!\n");
-  } else {
-    perror("SQlite");
-  }
-
-  // create the table
-  sqlite3_stmt *crtbl;
-  sqlite3_prepare_v2(db, "delete from connections", -1, &crtbl, NULL);
-  if (sqlite3_step(crtbl) != SQLITE_DONE) {
-    perror("Truncate tbl");
-  } else {
-    // printf("Cleared!\n");
-  }
-  sqlite3_finalize(crtbl);
-
-  // prepare the insert in advance!
-  int res_ins = sqlite3_prepare_v2(
-      db, "insert into connections(cnfd,cncrdt,cnon) values(?1,?2,1)", -1,
-      &inscn, NULL);
-  if (res_ins != SQLITE_OK) {
-    printf("Error in insert stmt\n");
-  }
-
-  // prepare the select in advance!
-  int res_sel = sqlite3_prepare_v2(
-      db, "select cnfd from connections WHERE cncrdt < ?1 AND cnon = 1", -1,
-      &selcn, NULL);
-  if (res_sel != SQLITE_OK) {
-    printf("Error in select stmt\n");
-  }
-
-  // prepare the select in advance!
-  int res_selcou =
-      sqlite3_prepare_v2(db,
-                         "select "
-                         "json_group_array(json_object('cocou',cocou,'conm1',"
-                         "conm1,'cocur',cocur)) from countries",
-                         -1, &selcou, NULL);
-  if (res_selcou != SQLITE_OK) {
-    printf("Error in country select\n");
-  }
-
-  // prepare the update statement
-  // sqlite3_stmt *updcn;
-  int res_upd = sqlite3_prepare_v2(
-      db, "update connections set cncrdt = ?1 where cnfd = ?2", -1, &updcn,
-      NULL);
-  if (res_upd != SQLITE_OK) {
-    printf("Error in update stmt\n");
-  }
-
-  // prepare the select in advance!
-  int res_del = sqlite3_prepare_v2(
-      db, "update connections set cnupdt = $1, cnon=0 WHERE cnfd = ?2", -1,
-      &delcn, NULL);
-  if (res_del != SQLITE_OK) {
-    printf("Error in Delete stmt\n");
-  }
-
+  prepSQL();
+  
   // SIGNAL
   //
   struct sigaction act;
@@ -157,8 +94,6 @@ int main(int argc, char *argv[]) {
     exit(-1);
   }
 
-  /* Accept loop */
-
   // Create epoll instance
   epfd = epoll_create1(0);
   if (epfd == -1) {
@@ -170,14 +105,9 @@ int main(int argc, char *argv[]) {
   struct sockaddr_in6 client_addr;
   socklen_t client_addr_len = sizeof(client_addr);
   int ctr = 1;
-  mev = (evtrack_t *)calloc(1, sizeof(evtrack_t)); // not freed?
-  // ----------------------------------------------------ADD Main socket
-  mev->evfd = sock_fd; // the main one.
-  mev->evid = 0;
-  mev->evst = 0;
-  mev->evbr = 0;
 
-  event.data.ptr = mev;
+  event.data.u64 = 9999; 
+
   event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;
   int res = epoll_ctl(epfd, EPOLL_CTL_ADD, sock_fd, &event);
   if (res < 0) {
@@ -194,12 +124,14 @@ int main(int argc, char *argv[]) {
   }
 
   // Wait for incoming conns
+  events =
+      (struct epoll_event *)calloc(MAX_EVENTS, sizeof(struct epoll_event)); //
+
   while (shutDown == 1) {
 
-    // free(events);
-    events = (struct epoll_event *)calloc(
-        MAX_EVENTS, sizeof(struct epoll_event)); // how to free?
-    conns = epoll_wait(epfd, events, MAX_EVENTS, 1000);
+    printf("Start wait\n");
+    conns = epoll_wait(epfd, events, MAX_EVENTS, 2000);
+
     if (conns == -1) {
 
       if (errno == EINTR) {
@@ -212,27 +144,18 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    // printf("No of fds: %d\n", conns);
+    printf("No of conns: %d\n", conns);
 
-    for (n = 0; n < conns; ++n) {
+    // main connection processing loop - epoll wait
+    for (n = 0; n < conns; n++) {
 
-      evtrack_t *evt;
-      evt = events[n].data.ptr;
+      printf("Handling conn# %d\n", n);
+      int evid = events[n].data.u64;
+      printf("EVID was #%d\n",evid);
 
-      // printf("Loop#: %d\n", n);
-      // printf("fd: %d; id: %d; st: %d; Events: %s %s %s %s %s %s \n",
-      // evt->evfd,
-      //        evt->evid, evt->evst, (events[n].events & EPOLLIN) ? "IN" : "",
-      //        (events[n].events & EPOLLOUT) ? "OUT" : "",
-      //        (events[n].events & EPOLLRDHUP) ? "RDHUP" : "",
-      //        (events[n].events & EPOLLHUP) ? "HUP" : "",
-      //        (events[n].events & EPOLLPRI) ? "PRI" : "",
-      //        (events[n].events & EPOLLERR) ? "ERR" : "");
+      if (evid == 9999) {
 
-      // Check if the originating socket is existing conn or original sock_fd
-      // If original, treat it as new conn, add to watch list
-
-      if (evt->evfd == sock_fd) {
+        // new customer!
 
         // ----------------------------------------------------------------------------------accept
         int conn_sock = accept4(sock_fd, (struct sockaddr *)&client_addr,
@@ -246,7 +169,7 @@ int main(int argc, char *argv[]) {
           }
 
           if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            continue;
+            continue; // go to next connection in the for loop
 
           } else {
 
@@ -261,12 +184,14 @@ int main(int argc, char *argv[]) {
         getnameinfo((struct sockaddr *)&client_addr, sizeof(client_addr), name,
                     sizeof(name), port, sizeof(port),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        printf("Accept: fd: %d; IP: %s; port:%s\n", conn_sock, name, port);
 
         // insert connection into db
         time_t t1 = time(NULL); // stores current time
-        sqlite3_bind_int64(inscn, 1, (sqlite3_int64)conn_sock); // cnfd
-        sqlite3_bind_int64(inscn, 2, (sqlite3_int64)t1);        // cndt
+        sqlite3_bind_int64(inscn, 1, (sqlite3_int64)ctr);      // cnid
+        sqlite3_bind_int64(inscn, 2, (sqlite3_int64)conn_sock); // cnfd
+        sqlite3_bind_int64(inscn, 3, (sqlite3_int64)CREATED);   // cnst
+        sqlite3_bind_int64(inscn, 4, (sqlite3_int64)t1);        // cndt
+
         if (sqlite3_step(inscn) != SQLITE_DONE) {
           perror("Ins");
         } else {
@@ -274,26 +199,14 @@ int main(int argc, char *argv[]) {
         }
         sqlite3_reset(inscn);
 
+        printf("Accept: fd: %d; IP: %s; port:%s ctr: %d\n", conn_sock, name, port, ctr);
+        
         // This IS same event variable as earlier
         // as the struct gets stored in the epoll table, guess it is oK.
         // The data member is the only one that is saved and returned.
-        event.events = EPOLLIN | EPOLLET | EPOLLOUT | EPOLLRDHUP;
-
-        // create a new memory loc for this event
-        // Here I am just asking memory from random locations, should be
-        // organised in array? How to keep track of each?
-        //
-        evtrack_t *cev;
-        cev = (evtrack_t *)calloc(1, sizeof(evtrack_t));
-        // create mem for a struct holding event data.
-        cev->evid = ctr++;
-        cev->evst = 1; // just setup
-        cev->evfd = conn_sock;
-        cev->evbr = 0;
-
-        event.data.ptr = cev;
-
-        // event.data.fd = conn_sock;
+        // removed EPOLLOUT from here (16/5)
+        event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+        event.data.u64 = ctr;
 
         // printf("Event addr 2 %p\n",(void *)&event);
         res = epoll_ctl(epfd, EPOLL_CTL_ADD, conn_sock, &event);
@@ -302,149 +215,75 @@ int main(int argc, char *argv[]) {
           exit(-1);
         }
 
+        // increment the counter.
+        ctr++;
+        
       } else {
 
-        // Print the events that came in.
+        // existing connection
+        printf("Existing conn ID# %d\n", evid);
 
-        evtrack_t *evt2;
-        evt2 = events[n].data.ptr; // error here!
+        // fetch conn records from db
+        int evfd;
+        int b2 = sqlite3_bind_int64(selfd, 1, evid); // cnid
+        if (b2 != SQLITE_OK) {
+          printf(sqlite3_errmsg(db));
+        }
+       
+        while (sqlite3_step(selfd) != SQLITE_DONE) {
+          evfd = sqlite3_column_int(selfd, 0);
+        } // should be only 1 record anyway
 
-        // printf("Test: %d\n", events[n].data.fd);
+        sqlite3_reset(selfd);
 
+        printf("Conn ID# %d has fd of %d\n",evid, evfd);
+        
         // If existing, process read
 
         if (events[n].events & EPOLLRDHUP) {
-          close(evt2->evfd);
+          // close(evfd);
           printf("Closed due to RDHUP\n");
-          break;
+          // break;
+          continue;
         }
 
         if (events[n].events & EPOLLERR) {
-          close(evt2->evfd);
+          close(evfd);
           printf("Closed due to ERR\n");
           break;
         }
 
         if (events[n].events & EPOLLIN) {
-          hdlRead(evt2);
-        }
 
-        if (events[n].events & EPOLLOUT) {
-          hdlSend(evt2);
-        }
+          printf("Despatching to read!\n");
+          hdlRead(evfd,evid);
+          hdlSend(evfd,evid);
+       }
 
-        // handle EPOLLPRI etc., later.
-        //
 
-        // IF sent, then free up the memory for event data
+        // printf("evfd is %d \n", evfd);
+    
+       // int d4 = epoll_ctl(epfd, EPOLL_CTL_DEL, evfd, NULL);
+       // if (d4 == -1) {
+       // if (errno != ENOENT) {
+        // ignoring ENOENT since it may hv been deleted earlier aft send.
+        // perror("ecd");
+       // }
+       // }
 
-        if (evt2->evst == 3) {
-          // free up memory
-          // Dont watch anymore
-          int del = epoll_ctl(epfd, EPOLL_CTL_DEL, evt2->evfd, NULL);
-          if (del == -1) {
-            perror("Del");
-            exit(-1);
-          }
+      } // else case
 
-          // Delete record
-          // int b3 =
-          //     sqlite3_bind_int64(delcn, 1, (sqlite3_int64)evt2->evfd); //
-          //     time
-          // if (b3 != SQLITE_OK) {
-          //   printf(sqlite3_errmsg(db));
-          // }
-          // sqlite3_step(delcn);
-          // sqlite3_reset(delcn);
+    } // for loop
 
-          free(evt2);
-          // printf("freed memory!\n");
-        }
+    
+  } // while loop
 
-        // If sent then close the connection?
+  deltimeout();
+  // free(events);
 
-        // res = epoll_ctl(epfd,EPOLL_CTL_DEL,events[n].data.fd,NULL);
-        // if (res == -1) {
-        //   perror("Del");
-        //   exit(-1);
-        // }
-        // printf("Conn deleted: %d\n",events[n].data.fd);
+} // int main ends here
 
-      } // else
-
-    } // for loop thru conns caught by wait.
-
-    free(events);
-    // printf("Back to main loop!\n");
-
-    // Try conn clean up here
-
-    time_t tq = time(NULL); // stores current time
-    // printf("time now %ld\n", tq);
-    // printf("timeout: %d\n",KA_TIMEOUT);
-    tq -= KA_TIMEOUT;
-    // printf("time less timeout %ld\n", tq);
-    // printf("qry time: %ld", tq);
-
-    int b1 = sqlite3_bind_int64(selcn, 1, (sqlite3_int64)tq); // time
-    if (b1 != SQLITE_OK) {
-      printf(sqlite3_errmsg(db));
-    }
-
-    // int b2 = sqlite3_step(selcn);
-    // if (b2 != SQLITE_OK) {
-    //   printf(sqlite3_errmsg(db));
-    // }
-
-    while (sqlite3_step(selcn) != SQLITE_DONE) {
-
-      // printf("fd: %d, ", sqlite3_column_int(selcn, 0));
-      // printf("\n");
-      // Delete that connection socket.
-      int delfd = sqlite3_column_int(selcn, 0);
-      // printf("Deleting %d\n", delfd);
-
-      // Delete from watch list
-      int d4 = epoll_ctl(epfd, EPOLL_CTL_DEL, delfd, NULL);
-      if (d4 == -1) {
-        if (errno != ENOENT) {
-          // ignoring ENOENT since it may hv been deleted earlier aft send.
-          perror("ecd");
-        }
-      }
-      // Figure out how to get the relevant evt2 to clear?!;
-
-      close(delfd);
-
-      // Delete record
-      time_t t2 = time(NULL); // stores current time
-      int b2 = sqlite3_bind_int64(delcn, 1, (sqlite3_int64)t2); // del date
-      if (b2 != SQLITE_OK) {
-        printf(sqlite3_errmsg(db));
-      }
-      b2 = sqlite3_bind_int64(delcn, 2, (sqlite3_int64)delfd); // fd
-      if (b2 != SQLITE_OK) {
-        printf(sqlite3_errmsg(db));
-      }
-      sqlite3_step(delcn);
-      sqlite3_reset(delcn);
-
-    } // while loop of sqlite3
-
-    sqlite3_reset(selcn);
-
-  } // infinite while loop.
-}
-
-void hdlRead(evtrack_t *evt) {
-
-  // Write the server so it can handle multiple requests on each accepted
-  // socket, Loop reading requests and sending responses until
-  // - peer closes the connection,
-  // - read timeout occurs reading the request,
-  // - socket error occurs.
-
-  // printf("Reading: %d from conn# %d \n", evt->evfd, evt->evid);
+void hdlRead(int evfd, int evid) {
 
   ssize_t br;
   uint8_t buffer[MAX_READ_BUFFER] = {0};
@@ -452,7 +291,7 @@ void hdlRead(evtrack_t *evt) {
   // -----------------------------Loop for the recv
   while (1) {
 
-    br = read(evt->evfd, buffer, MAX_READ_BUFFER - 1);
+    br = read(evfd, buffer, MAX_READ_BUFFER - 1);
 
     if (br < 0) {
 
@@ -462,8 +301,28 @@ void hdlRead(evtrack_t *evt) {
       }
 
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        continue;
+
+        // at this point just assume nothing more to read
+        // revisit this later.
+        
+        // write state and break not continue.
+        time_t tr = time(NULL); // stores current time
+        sqlite3_bind_int64(updcn, 1, (sqlite3_int64)evid); // cnid
+        // sqlite3_bind_int64(updcn, 2, (sqlite3_int64)evfd); // cnfd
+        sqlite3_bind_int64(updcn, 2, (sqlite3_int64)READ); // cnst
+        sqlite3_bind_int64(updcn, 3, (sqlite3_int64)tr);        // cnupdt
+        if (sqlite3_step(updcn) != SQLITE_DONE) {
+          perror("Upd");
+        } else {
+          // printf("Updated!\n");
+        }
+        sqlite3_reset(updcn);
+
+        printf("Breaking due to EAGAIN!\n");
+        break;
+
       } else {
+
         perror("Read");
         // free(events);
         exit(-1);
@@ -471,30 +330,29 @@ void hdlRead(evtrack_t *evt) {
     }
 
     if (br >= 0) {
-      evt->evbr += br;
-      evt->evst = 2; // Reading (when complete?!)
 
       // update the time for that connection.
       time_t tr = time(NULL); // stores current time
-      sqlite3_bind_int64(updcn, 1, (sqlite3_int64)evt->evfd); // cnfd
-      sqlite3_bind_int64(updcn, 2, (sqlite3_int64)tr);        // cndt
-      if (sqlite3_step(updcn) != SQLITE_DONE) {
+      sqlite3_bind_int64(updbr, 1, (sqlite3_int64)evid); // cnid
+      sqlite3_bind_int64(updbr, 2, (sqlite3_int64)br); // cnbr (replacing for now)
+      sqlite3_bind_int64(updbr, 3, (sqlite3_int64)READING); // cnst
+      sqlite3_bind_int64(updbr, 4, (sqlite3_int64)tr);        // cnupdt
+      if (sqlite3_step(updbr) != SQLITE_DONE) {
         perror("Upd");
       } else {
-        // printf("Updated!\n");
+        // printf("Updated conn id %d br: %ld status: %d tr: %ld \n",evid,br,READING,tr);
       }
-      sqlite3_reset(updcn);
+      sqlite3_reset(updbr);
+      printf("Breaking aft read!\n");
       break;
     }
 
   } // while loop
 
-  // printf("Read: conn#: %d; fd: %d; bytes: %d \n", evt->evid, evt->evfd,
-  //       evt->evbr);
   return;
 }
 
-void hdlSend(evtrack_t *evt) {
+void hdlSend(int evfd, int evid) {
 
   // printf("Sending: %d to conn# %d\n", evt->evfd, evt->evid);
   ssize_t bs;
@@ -542,16 +400,16 @@ void hdlSend(evtrack_t *evt) {
   // -----------------------------Loop for the send
   while (1) {
 
-    bs = send(evt->evfd, http_response, strlen(http_response), MSG_NOSIGNAL);
+    bs = send(evfd, http_response, strlen(http_response), MSG_NOSIGNAL);
 
     if (bs >= 0) {
-      evt->evst = 3; // Sending or sent?!
-
+      
       // update the time for this connection.
 
       time_t ts = time(NULL); // stores current time
-      sqlite3_bind_int64(updcn, 1, (sqlite3_int64)evt->evfd); // cnfd
-      sqlite3_bind_int64(updcn, 2, (sqlite3_int64)ts);        // cndt
+      sqlite3_bind_int64(updcn, 1, (sqlite3_int64)evid); // cnid
+      sqlite3_bind_int64(updcn, 2, (sqlite3_int64)SENT); // cnst
+      sqlite3_bind_int64(updcn, 3, (sqlite3_int64)ts);   // cnupdt
       if (sqlite3_step(updcn) != SQLITE_DONE) {
         perror("Upd");
       } else {
@@ -559,6 +417,7 @@ void hdlSend(evtrack_t *evt) {
       }
       sqlite3_reset(updcn);
 
+      printf("Breaking SEND normally!\n");
       break;
 
     } else {
@@ -569,8 +428,12 @@ void hdlSend(evtrack_t *evt) {
       }
 
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        continue;
+
+        // write state and break TBD
+      printf("Breaking SEND aft EAGAIN!\n");
+        break;
       }
+
       if (errno = EPIPE) {
         break;
       } else {
@@ -591,16 +454,129 @@ void hdl_sigint(int sig) {
   shutDown = 1;
 
   close(sock_fd); // main socket
-  free(mev);      // epoll wait on main socket
-  free(events);   // close events array
   close(epfd);    // close the epoll fd
   sqlite3_finalize(selcn);
+  sqlite3_finalize(selfd);
   sqlite3_finalize(inscn);
   sqlite3_finalize(updcn);
+  sqlite3_finalize(updbr);
   sqlite3_finalize(delcn);
   sqlite3_finalize(selcou);
   sqlite3_close(db); // close the db.
+  free(events);
   printf("Closed everything!\n");
 
   // exit(0);
 }
+
+void deltimeout() {
+
+  // Delete all records past timeout
+  // -------------------------------------------------------------------------------------
+
+  time_t tq = time(NULL); // stores current time
+  tq -= KA_TIMEOUT;
+ 
+  int b1 = sqlite3_bind_int64(selcn, 1, (sqlite3_int64)tq); // time
+  if (b1 != SQLITE_OK) {
+    printf(sqlite3_errmsg(db));
+  }
+
+  while (sqlite3_step(selcn) != SQLITE_DONE) {
+
+    int delfd = sqlite3_column_int(selcn, 0);
+    int d4 = epoll_ctl(epfd, EPOLL_CTL_DEL, delfd, NULL);
+    if (d4 == -1) {
+       perror("ecd");
+    }
+
+    close(delfd);
+
+  } // while loop of sqlite3
+
+  sqlite3_reset(selcn);
+
+}
+
+void prepSQL() {
+
+  // Open Sqlite connection
+
+  //   int rc = sqlite3_open_v2("cn.db", &db, SQLITE_OPEN_CREATE |
+  //   SQLITE_OPEN_READWRITE | SQLITE_OPEN_MEMORY );
+  //   need to consider the program execution directory!
+  int sc = sqlite3_open_v2("db/gttp.db", &db,
+                           SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, NULL);
+  if (sc == SQLITE_OK) {
+    // printf("Opened SQlite DB!\n");
+  } else {
+    perror("SQlite");
+  }
+
+
+  // truncate table at start
+  sqlite3_stmt *crtbl;
+  sqlite3_prepare_v2(db, "delete from conns", -1, &crtbl, NULL);
+  if (sqlite3_step(crtbl) != SQLITE_DONE) {
+    perror("Truncate tbl");
+  }
+  sqlite3_finalize(crtbl);
+
+  // Insert statement 1
+  int res_ins = sqlite3_prepare_v2(
+      db, "insert into conns(cnid,cnfd,cnst,cncrdt) values(?1,?2,?3,?4)", -1,
+      &inscn, NULL);
+  if (res_ins != SQLITE_OK) {
+    printf("Error in insert stmt\n");
+  }
+
+  // Select statement 1
+  int res_sel = sqlite3_prepare_v2(
+      db, "select cnfd from conns WHERE cnupdt < ?1", -1, &selcn,
+      NULL);
+  if (res_sel != SQLITE_OK) {
+    printf("Error in select stmt selcn\n");
+  }
+
+  // Select statement 2
+  int res_sel2 = sqlite3_prepare_v2(
+      db, "select cnfd from conns WHERE cnid = ?1", -1, &selfd, NULL);
+  if (res_sel2 != SQLITE_OK) {
+    printf("Error in select stmt selfd\n");
+  }
+
+  // JSON Select 1
+  int res_selcou =
+      sqlite3_prepare_v2(db,
+                         "select "
+                         "json_group_array(json_object('cocou',cocou,'conm1',"
+                         "conm1,'cocur',cocur)) from countries",
+                         -1, &selcou, NULL);
+  if (res_selcou != SQLITE_OK) {
+    printf("Error in country select\n");
+  }
+
+  // Update status
+  int res_upd = sqlite3_prepare_v2(
+      db, "update conns set cnupdt = ?3, cnst = ?2 where cnid = ?1", -1, &updcn, NULL);
+  if (res_upd != SQLITE_OK) {
+    printf("Error in update stmt updcn\n");
+  }
+
+  // Update bytes read
+  // Try to merge this with above.
+  int res_updbr = sqlite3_prepare_v2(
+      db, "update conns set cnupdt = ?4, cnbr = ?2, cnst = $3 where cnid = ?1", -1, &updbr, NULL);
+  if (res_updbr != SQLITE_OK) {
+    printf("Error in update stmt updbr\n");
+  }
+
+  // Update updt
+  int res_del = sqlite3_prepare_v2(
+      db, "update conns set cnupdt = $1 WHERE cnfd = ?2", -1, &delcn,
+      NULL);
+  if (res_del != SQLITE_OK) {
+    printf("Error in Delete stmt delcn\n");
+  }
+  
+}  // end prepSQL

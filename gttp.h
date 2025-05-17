@@ -11,6 +11,19 @@
 void hdlRead();
 void hdlSend();
 void hdl_sigint(int sig);
+void prepSQL();
+void deltimeout();
+
+enum cnst {
+
+ CREATED,
+ READING,
+ READ,
+ SENDING,
+ SENT,
+ CLOSED  
+
+};
 
 struct evtrack_s {
   int evid;  // some running id
