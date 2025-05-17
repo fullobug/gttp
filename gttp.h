@@ -1,9 +1,9 @@
 /* All defs and constants */
 
 #define HTTP_PORT 3000
-#define BACKLOG 64
+#define BACKLOG 128
 #define _GNU_SOURCE
-#define MAX_EVENTS 100
+#define MAX_EVENTS 500
 #define MAX_READ_BUFFER 1024
 #define MAX_CONNS 100
 #define KA_TIMEOUT 2
