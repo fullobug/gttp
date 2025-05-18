@@ -213,10 +213,6 @@ int main(int argc, char *argv[]) {
         // fetch conn records from db
         int evfd = events[n].data.fd;
         
-        printf("Conn has fd of %d\n",evfd);
-
-        // this db op seems to take 230ms 1st time then only 16ms
-
         // If existing, process read
 
         if (events[n].events & EPOLLRDHUP) {
