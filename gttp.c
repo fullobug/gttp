@@ -23,11 +23,12 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/uio.h>
 
 int shutDown = 1;
 struct epoll_event *events;
 int sock_fd;
-evtrack_t *mev;
+//evtrack_t *mev;
 int epfd;
 
 sqlite3 *db;
@@ -40,10 +41,10 @@ sqlite3_stmt *selcou;
 sqlite3_stmt *selfd;
 sqlite3_stmt *upclose;
 
-const char status_200[] = "HTTP/1.1 200 OK\r\n";
-const char status_500[] = "HTTP/1.1 500 Internal Server Error\r\n";
-const char cont_json[] = "Content-Type: text/json\r\n";
-const char cont_txt[] = "Content-Type: text/plain\r\n";
+char status_200[] = "HTTP/1.1 200 OK\r\n";
+char status_500[] = "HTTP/1.1 500 Internal Server Error\r\n";
+char cont_json[] = "Content-Type: text/json\r\n";
+char cont_txt[] = "Content-Type: text/plain\r\n";
 
 int main(int argc, char *argv[]) {
 
@@ -298,26 +299,72 @@ void hdlSend(int evfd) {
 
   char cont_len[50];
   char http_response[1024];
-
-  ssize_t bl;
-  const unsigned char *res2;
+  struct iovec vector[6] = {{ 0 }};
+  
+  // ssize_t bl;
+  // ssize_t *bl2;
+      
+  const unsigned char *res2 = {0};
+  // char *res2a;
+  
+  char json_size[30];
 
   int res1 = sqlite3_step(selcou);
   if (res1 == SQLITE_ROW) {
 
+    // res2 is const unsigned char *
+    // it is a zero terminated string
+    // res2 = sqlite3_column_text(selcou, 0);
     res2 = sqlite3_column_text(selcou, 0);
     if (res2 == NULL) {
       perror("Null");
       exit(-1);
+    } else {
+      // size of output
+      sprintf(json_size, "%ld", strlen((char *)res2));
+      // sizeof gets size of ptr not content!
     }
 
-    strcpy(http_response, status_200);
-    strcat(http_response, cont_json);
-    bl = strlen((char *)res2);
-    sprintf(cont_len, "Content-Length: %ld\r\n", bl);
-    strcat(http_response, cont_len);
-    strcat(http_response, "\r\n");
-    strcat(http_response, (char *)res2);
+    // printf("Size was: %s,%ld\n",json_size,strlen(json_size));
+
+    // char res3[] = "[{\"cocou\":\"IN\",\"conm1\":\"India\",\"cocur\":\"INR\"}]";
+        
+    vector[0].iov_base = status_200;
+    vector[0].iov_len = strlen(status_200);
+
+    vector[1].iov_base = cont_json;
+    vector[1].iov_len = strlen(cont_json);
+
+    vector[2].iov_base = "Content-Length: ";
+    vector[2].iov_len = 16;
+
+    // bl = strlen((char *)res2);
+    // bl2 = &bl;
+
+    vector[3].iov_base = json_size;
+    vector[3].iov_len = strlen(json_size); 
+
+    // vector[3].iov_base = "46";
+    // vector[3].iov_len = 2;
+
+    vector[4].iov_base="\r\n\r\n"; // last line of header
+    vector[4].iov_len = 4;
+
+    // printf("%s\n", res2); // works ok.
+    
+    vector[5].iov_base = (unsigned char *)res2;
+    vector[5].iov_len = strlen((char *)res2);
+
+    // vector[5].iov_base = res3;
+    // vector[5].iov_len = strlen(res3);
+
+    // strcpy(http_response, status_200);
+    // strcat(http_response, cont_json);
+    // bl = strlen((char *)res2);
+    // sprintf(cont_len, "Content-Length: %ld\r\n", bl);
+    // strcat(http_response, cont_len);
+    // strcat(http_response, "\r\n");
+    // strcat(http_response, (char *)res2);
     // strcat(http_response,"\r\n");
 
   } else {
@@ -325,11 +372,11 @@ void hdlSend(int evfd) {
     // printf("Send 2: %ld\n",clock());
     
     const char *err = sqlite3_errmsg(db);
-    bl = strlen((char *)err);
+    // bl = strlen((char *)err);
 
     strcpy(http_response, status_500);
     strcat(http_response, cont_txt);
-    sprintf(cont_len, "Content-Length: %ld\r\n", bl);
+    // sprintf(cont_len, "Content-Length: %ld\r\n", bl);
     strcat(http_response, cont_len);
     strcat(http_response, "\r\n");
     strcat(http_response, (char *)err);
@@ -344,7 +391,10 @@ void hdlSend(int evfd) {
   while (1) {
 
      // printf("Send 1: %ld\n",clock());
-     bs = send(evfd, http_response, strlen(http_response), MSG_NOSIGNAL);
+     // bs = send(evfd, http_response, strlen(http_response), MSG_NOSIGNAL);
+     bs = writev(evfd,vector,6);
+     // printf("Write: %ld\n", bs);
+     
      // printf("Send 2: %ld\n",clock());  //takes about 70-100ms
 
     if (bs >= 0) {
@@ -388,15 +438,7 @@ void hdl_sigint(int sig) {
 
   close(sock_fd); // main socket
   close(epfd);    // close the epoll fd
-  sqlite3_finalize(selcn);
-  sqlite3_finalize(selfd);
-  sqlite3_finalize(inscn);
-  sqlite3_finalize(updcn);
-  sqlite3_finalize(updbr);
-  sqlite3_finalize(delcn);
   sqlite3_finalize(selcou);
-  sqlite3_finalize(upclose);
-
   sqlite3_close(db); // close the db.
   free(events);
   printf("Closed everything!\n");
