@@ -385,7 +385,7 @@ void hdlSend(int evfd) {
 
 
   // printf("Send 3: %ld\n",clock());
-  sqlite3_reset(selcou);
+  // sqlite3_reset(selcou);
 
   // -----------------------------Loop for the send
   while (1) {
@@ -428,6 +428,7 @@ void hdlSend(int evfd) {
   } // while infinite
 
   // printf("Sent: conn#: %d; fd: %d; bytes: %ld \n", evt->evid, evt->evfd, bs);
+  sqlite3_reset(selcou);
   return;
 }
 
