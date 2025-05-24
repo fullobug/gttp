@@ -128,8 +128,9 @@ int main(int argc, char *argv[]) {
   }
 
   // Wait for incoming conns
-  struct epoll_event *events =
-      (struct epoll_event *)calloc(MAX_EVENTS, sizeof(struct epoll_event));
+  // struct epoll_event *events =
+  // 
+  events = (struct epoll_event *)calloc(MAX_EVENTS, sizeof(struct epoll_event));
 
   while (shutDown == 1) {
 
@@ -437,11 +438,12 @@ void hdl_sigint(int sig) {
   printf("Caught signal %d\n", sig);
   shutDown = 1;
 
+  free(events);
   close(sock_fd); // main socket
   close(epfd);    // close the epoll fd
   sqlite3_finalize(selcou);
   sqlite3_close(db); // close the db.
-  free(events);
+  // free(events);
   printf("Closed everything!\n");
 
   // exit(0);
